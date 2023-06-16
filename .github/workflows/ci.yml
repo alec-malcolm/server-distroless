@@ -1,0 +1,78 @@
+name: build, test, scan
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      issues: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: setup
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18.x'
+
+      - name: Install dependencies
+        run: npm install --omit=dev
+
+      - name: CycloneDX Node.js Generate SBOM
+        uses: CycloneDX/gh-node-module-generatebom@v1.0.3
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: bom.xml
+
+      - name: Upload BOM to Dependency-Track
+        uses: DependencyTrack/gh-upload-sbom@v2.0.0
+        with:
+          serverhostname: ${{ secrets.DEPENDENCY_TRACK_URL }}
+          apikey: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          project: ${{ secrets.SERVER_APP_PROJECT }}
+
+      - name: Build server container image
+        run: |
+          docker build . -f Dockerfile -t server:latest \
+            -t server:${{ github.sha }}
+
+      - name: Container Static Application Security Test
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: server:${{ github.sha }}
+          format: 'cyclonedx'
+          scanners: 'vuln'
+          github-pat: ${{ secrets.GITHUB_TOKEN }}
+          output: 'trivy-results.json'
+
+      - name: Upload BOM to Dependency-Track
+        uses: DependencyTrack/gh-upload-sbom@v2.0.0
+        with:
+          serverhostname: ${{ secrets.DEPENDENCY_TRACK_URL }}
+          apikey: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+          project: ${{ secrets.SERVER_CONTAINER_PROJECT }}
+          bomfilename: 'trivy-results.json'
+
+      - name: Start server for Dynamic Application Security Test
+        run: |
+          docker run -d --rm --name server -p 8080:8080 server:latest
+
+      - name: OWASP ZAP DAST Scan
+        uses: zaproxy/action-full-scan@v0.4.0
+        with:
+          target: http://localhost:8080
+
+      - name: Tear down server
+        if: always()
+        run: |
+          docker kill server
+          docker system prune --all --volumes --force
