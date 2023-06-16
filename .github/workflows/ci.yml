@@ -59,7 +59,7 @@ jobs:
         with:
           serverhostname: ${{ secrets.DEPENDENCY_TRACK_URL }}
           apikey: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
-          project: ${{ secrets.SERVER_CONTAINER_PROJECT }}
+          project: ${{ secrets.SERVER_APP_PROJECT }}
           bomfilename: 'trivy-results.json'
 
       - name: Start server for Dynamic Application Security Test
