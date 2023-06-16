@@ -45,14 +45,14 @@ jobs:
           docker build . -f Dockerfile -t server:latest \
             -t server:${{ github.sha }}
 
-      - name: Container Static Application Security Test
+      - name: Container SBOM Generation
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: server:${{ github.sha }}
           format: 'cyclonedx'
           scanners: 'vuln'
           github-pat: ${{ secrets.GITHUB_TOKEN }}
-          output: 'trivy-results.json'
+          output: 'trivy-sbom.json'
 
       - name: Upload BOM to Dependency-Track
         uses: DependencyTrack/gh-upload-sbom@v2.0.0
@@ -60,7 +60,19 @@ jobs:
           serverhostname: ${{ secrets.DEPENDENCY_TRACK_URL }}
           apikey: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
           project: ${{ secrets.SERVER_APP_PROJECT }}
-          bomfilename: 'trivy-results.json'
+          bomfilename: 'trivy-sbom.json'
+
+      - name: Container Static Application Security Test
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: server:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        
+      - name: Upload Trivy SAST results to Github Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
 
       - name: Start server for Dynamic Application Security Test
         run: |
